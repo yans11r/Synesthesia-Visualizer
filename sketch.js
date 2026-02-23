@@ -9,6 +9,9 @@ let themeColorPicker;
 let bgColorPicker;    
 let bgImg = null;     // 用于存储用户上传的背景图
 
+// 【新增】音量控制滑块
+let volumeSlider;
+
 // 用于控制自适应范围
 let dynamicLimit = 40; 
 let targetLimit = 40;  
@@ -24,7 +27,8 @@ function setup() {
   fft = new p5.FFT(0.8, 128); 
   fft.setInput(mic);
   
-  // === UI 样式注入 (强制所有取色器变成完美的圆形) ===
+  // === UI 样式注入 ===
+  // 强制取色器变成完美的圆形，并美化音量滑块
   let css = `
     input[type="color"] {
       -webkit-appearance: none;
@@ -40,11 +44,35 @@ function setup() {
     }
     input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
     input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+    
+    /* 赛博朋克风格音量滑块 */
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100px;
+      background: transparent;
+    }
+    input[type="range"]:focus { outline: none; }
+    input[type="range"]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #00f3ff;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -4px;
+      box-shadow: 0 0 8px #00f3ff;
+    }
   `;
   createElement('style', css); 
   
   // === 1. 上传按钮 ===
-  // 现在同一个按钮可以接收 MP3 也可以接收图片 (jpg/png)
   uploadBtn = createFileInput(handleFile);
   uploadBtn.position(20, 20);
   uploadBtn.style('background-color', 'rgba(0,0,0,0.8)'); 
@@ -60,19 +88,23 @@ function setup() {
   themeColorPicker = createColorPicker('#00f3ff'); 
   themeColorPicker.position(20, 65);
   
-  // === 3. 背景色盘 (右) ===
-  bgColorPicker = createColorPicker('#0A0A0F'); // 默认暗色系背景
-  bgColorPicker.position(60, 65);
+  // === 3. 背景色盘 (中) ===
+  bgColorPicker = createColorPicker('#0A0A0F'); 
+  bgColorPicker.position(65, 65);
   
-  // === 4. 系统提示词 ===
-  let hint = createP('SYSTEM: Upload MP3/Image | Theme Color | BG Color');
-  hint.position(100, 58); 
+  // === 4. 【新增】音量控制滑块 (右) ===
+  // createSlider(最小值, 最大值, 默认值, 步长)
+  volumeSlider = createSlider(0, 1, 0.5, 0.01); 
+  volumeSlider.position(115, 70); 
+  
+  // === 5. 系统提示词 ===
+  let hint = createP('SYSTEM: Upload MP3/Img | Theme | BG | Volume');
+  hint.position(20, 95); 
   hint.style('color', '#888');
   hint.style('font-family', 'Courier New');
   hint.style('font-size', '10px');
 }
 
-// 智能文件处理：判断是音频还是图片
 function handleFile(file) {
   if (file.type === 'audio') {
     if (song) song.stop();
@@ -82,36 +114,34 @@ function handleFile(file) {
       mic.stop();
     });
   } else if (file.type === 'image') {
-    bgImg = loadImage(file.data); // 加载用户上传的照片
+    bgImg = loadImage(file.data); 
   } else {
     alert("Please upload an MP3 audio or an Image (JPG/PNG)!");
   }
 }
 
 function draw() {
-  // === 【新增】背景与底色渲染逻辑 ===
+  // === 【核心逻辑】全局音量控制 ===
+  let currentVolume = volumeSlider.value();
+  outputVolume(currentVolume); // 这行代码会自动控制所有声音（包括麦克风和MP3）的输出音量
+  
+  // === 背景与底色渲染逻辑 ===
   let bgColor = bgColorPicker.color();
-  // 提取用户选的底色的 RGB 值
   let bgR = bgColor.levels[0];
   let bgG = bgColor.levels[1];
   let bgB = bgColor.levels[2];
 
   if (bgImg) {
-    // 模式 A：如果有背景图片
-    image(bgImg, 0, 0, width, height); // 绘制全屏图片
-    
-    // 加一层半透明底色遮罩（滤镜），确保频谱发光清晰可见
+    image(bgImg, 0, 0, width, height); 
     push();
     noStroke();
-    fill(bgR, bgG, bgB, 180); // 180 是遮罩浓度，可根据喜好调大调小
+    fill(bgR, bgG, bgB, 180); 
     rect(0, 0, width, height);
     pop();
   } else {
-    // 模式 B：没有图片时，使用经典的底色拖影模式 (40 透明度)
     background(bgR, bgG, bgB, 40); 
   }
 
-  // 获取音频数据
   let spectrum = fft.analyze(); 
   let bassEnergy = fft.getEnergy("bass");
   let vol = map(bassEnergy, 0, 255, 0, 1);
@@ -131,7 +161,6 @@ function draw() {
   uploadBtn.style('color', hexColor);            
   uploadBtn.style('border', `1px solid ${hexColor}`); 
   uploadBtn.style('box-shadow', `0 0 8px ${hexColor}`);
-  // ==========================================
 
   // 自适应算法
   let maxActiveIndex = 30; 
@@ -152,15 +181,13 @@ function draw() {
   translate(width / 2, height / 2);
   rotate(frameCount * 0.1); 
   
-  // 绘制底座
   noFill();
-  stroke(bgR + 20, bgG + 20, bgB + 20); // 底座也跟随背景色微微变亮
+  stroke(bgR + 20, bgG + 20, bgB + 20); 
   strokeWeight(2);
   ellipse(0, 0, 200, 200);
   stroke(bgR + 30, bgG + 30, bgB + 30);
   ellipse(0, 0, 500, 500);
   
-  // 绘制自适应频谱柱
   let barsCount = floor(dynamicLimit); 
   strokeCap(SQUARE);
   
@@ -185,7 +212,6 @@ function draw() {
     pop();
   }
   
-  // 中心核心
   blendMode(ADD);
   noStroke();
   fill(primaryColor.levels[0], primaryColor.levels[1], primaryColor.levels[2], 50);
@@ -202,7 +228,6 @@ function draw() {
   
   blendMode(BLEND);
 
-  // 粒子系统
   if (vol > 0.4) {
     let p = new Particle(primaryColor); 
     particles.push(p);
@@ -217,7 +242,6 @@ function draw() {
   }
 }
 
-// 粒子类
 class Particle {
   constructor(baseColor) {
     this.pos = p5.Vector.random2D().mult(random(100, 250)); 
