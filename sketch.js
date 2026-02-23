@@ -265,3 +265,10 @@ class Particle {
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 }
+function mousePressed() {
+    userStartAudio();
+}
+
+function touchStarted() {
+    userStartAudio();
+}
